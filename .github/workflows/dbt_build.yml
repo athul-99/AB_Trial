@@ -1,0 +1,92 @@
+name: Run dbt build
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Choose the GitHub environment"
+        required: true
+        type: choice
+        default: "dev"
+        options:
+          - dev
+          - uat
+          - prod
+
+jobs:
+  dbt-build:
+    name: Run dbt build
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Create dbt profiles.yml
+        env:
+          DBT_TARGET: ${{ vars.DBT_TARGET }}
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+        run: |
+          mkdir -p ~/.dbt
+
+          cat > ~/.dbt/profiles.yml << EOF_PROFILE
+          ab_trial:
+            target: ${DBT_TARGET}
+            outputs:
+              dev:
+                type: snowflake
+                account: ${SNOWFLAKE_ACCOUNT}
+                user: ${SNOWFLAKE_USER}
+                password: ${SNOWFLAKE_PASSWORD}
+                role: ACCOUNTADMIN
+                database: AB_TRIAL_DEV
+                warehouse: AB_TRIAL_DEV_WH
+                schema: MARTS
+                threads: 4
+                client_session_keep_alive: false
+
+              uat:
+                type: snowflake
+                account: ${SNOWFLAKE_ACCOUNT}
+                user: ${SNOWFLAKE_USER}
+                password: ${SNOWFLAKE_PASSWORD}
+                role: ACCOUNTADMIN
+                database: AB_TRIAL_UAT
+                warehouse: AB_TRIAL_UAT_WH
+                schema: MARTS
+                threads: 4
+                client_session_keep_alive: false
+
+              prod:
+                type: snowflake
+                account: ${SNOWFLAKE_ACCOUNT}
+                user: ${SNOWFLAKE_USER}
+                password: ${SNOWFLAKE_PASSWORD}
+                role: ACCOUNTADMIN
+                database: AB_TRIAL_PROD
+                warehouse: AB_TRIAL_PROD_WH
+                schema: MARTS
+                threads: 4
+                client_session_keep_alive: false
+          EOF_PROFILE
+
+      - name: Run dbt debug
+        run: |
+          dbt debug --project-dir ab_trial
+
+      - name: Run dbt build
+        run: |
+          dbt build --project-dir ab_trial --target ${{ vars.DBT_TARGET }}
